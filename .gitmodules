@@ -1,21 +1,12 @@
 [submodule "imx-atf"]
 	path = imx-atf
 	url = https://source.codeaurora.org/external/imx/imx-atf.git
-
-
 [submodule "imx-mkimage"]
-	path = base
-#   url = https://source.codeaurora.org/external/imx/imx-mkimage.git
-    url = https://github.com/TsuReX/imx-mkimage.git
-
-
+	path = imx-mkimage
+	url = git@github.com:TsuReX/imx-mkimage.git
 [submodule "imx-optee-os"]
 	path = imx-optee-os
 	url = https://source.codeaurora.org/external/imx/imx-optee-os.git
-
-
-[submodule "uboot-imx"]
-	path = uboot-imx
-#	url = https://source.codeaurora.org/external/imx/uboot-imx
-	url = https://github.com/TsuReX/imx-uboot.git
-
+[submodule "imx-uboot"]
+	path = imx-uboot
+	url = git@github.com:TsuReX/imx-uboot.git
