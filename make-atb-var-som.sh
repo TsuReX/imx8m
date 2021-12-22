@@ -3,19 +3,22 @@
 # 1
 cd imx-uboot/
 
-CROSS_COMPILE=aarch64-none-elf- make mrproper
-rm -r ./atb-var-som_build
+if [[ $1 == "defconfig" ]]
+then
+    CROSS_COMPILE=aarch64-none-elf- make mrproper
+    rm -r ./atb-var-som_build
+    CROSS_COMPILE=aarch64-none-elf- make O=./atb-var-som_build/ atb_var_som_defconfig
 
-# 1.1
-#CROSS_COMPILE=aarch64-none-elf- make O=./atb-var-som_build/ atb_var_som_defconfig
+elif [[ $1 == "menuconfig" ]]
+then
+    CROSS_COMPILE=aarch64-none-elf- make O=./atb-var-som_build/ menuconfig
+#    cp atb-var-som_build/.config atb_var_som.config
 
-# 1.2.1
-mkdir ./atb-var-som_build
-cp atb_var_som.config atb-var-som_build/.config
+else
+        echo "Unknown mode"
+        exit
+fi
 
-# 1.2.2
-#CROSS_COMPILE=aarch64-none-elf- make O=./atb-var-som_build/ menuconfig
-#cp atb-var-som_build/.config atb_var_som.config
 
 CROSS_COMPILE=aarch64-none-elf- make O=./atb-var-som_build/ -j8
 
