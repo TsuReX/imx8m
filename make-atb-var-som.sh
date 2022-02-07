@@ -15,7 +15,8 @@ if [[ $1 == "defconfig" ]]
 then
 	CROSS_COMPILE=aarch64-none-elf- make mrproper
 	rm -r ./atb-var-som_build
-	CROSS_COMPILE=aarch64-none-elf- make O=./atb-var-som_build/ atb_var_som_defconfig
+#	CROSS_COMPILE=aarch64-none-elf- make O=./atb-var-som_build/ imx8mq_evk_defconfig
+    CROSS_COMPILE=aarch64-none-elf- make O=./atb-var-som_build/ atb_var_som_defconfig
 
 elif [[ $1 == "menuconfig" ]]
 then
@@ -60,27 +61,30 @@ cd imx-mkimage/
 
 make clean
 make SOC=iMX8MP BOARD=atb-var-som OUTIMG=atb-var-som.bin flash_img
-
+sha256sum ./iMX8M/atb-var-som.bin
 sudo dd if=./iMX8M/atb-var-som.bin of=/dev/sdc bs=1k seek=32 conv=fsync
 
 cd ..
 
 #5
 sleep 1
-sudo umount -f ./target_flash
 sudo rm -rf ./target_flash
 mkdir ./target_flash
-#ls -l /dev/sdc1
-#ls -l /dev/
 sudo mount /dev/sdc1 ./target_flash
+sudo rm -rf ./target_flash/*
 
-#find ./rootfs | cpio -H newc -o | gzip -9 > _rootfs.cpio.gz ; ./mkimage -A arm -T ramdisk -C gzip -d _rootfs.cpio.gz rootfs.cpio.gz; rm _rootfs.cpio.gz
+find ./rootfs | cpio -H newc -o | gzip -9 > _rootfs.cpio.gz ; ./imx-mkimage/iMX8M/mkimage_uboot -A arm -T ramdisk -C gzip -d _rootfs.cpio.gz rootfs.cpio.gz; rm _rootfs.cpio.gz
 
 sudo cp $linux_dtb ./target_flash/dtb
+sha256sum $linux_dtb ./target_flash/dtb
+
 sudo cp $linux ./target_flash/linux
+sha256sum $linux ./target_flash/linux
+
 if [ ! -z $rootfs ]
 then
 	sudo cp $rootfs ./target_flash/rootfs
+	sha256sum $rootfs ./target_flash/rootfs
 fi
 sleep 1
 ls -l ./target_flash
