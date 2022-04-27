@@ -7,7 +7,7 @@ linux="/home/user/building_drive/variscite/linux/build_imx8_var/arch/arm64/boot/
 rootfs="./rootfs.cpio.gz"
 
 make_uboot() {
-	# $1 - configuration type
+	# $1 - configuration type {defconfig|menuconfig|config}
 	# $2 - final binaries destination directory
 	# $3 - 
 	echo "---> Building uboot"
@@ -20,10 +20,14 @@ make_uboot() {
 	cd imx-uboot/
 	
 	local binaries_dest_dir=$2
-	local buildig_directory="./atb_building"
 	
-	local uboot_defconfig="atb_var_som_defconfig"
-	#local uboot_defconfig="imx8mq_evk_defconfig"
+	#local board="atb_var_som"
+	local board="atb_imx8m_smarc"
+	
+	echo "---> Board: "${board}
+	
+	local uboot_defconfig="${board}_defconfig"
+	local buildig_directory="./build-${board}"
 	
 	if [[ $1 == "defconfig" ]]
 	then
@@ -34,12 +38,12 @@ make_uboot() {
 	
 	elif [[ $1 == "menuconfig" ]]
 	then
-		CROSS_COMPILE=aarch64-none-elf- make O=./atb-var-som_build/ menuconfig
-		cp atb-var-som_build/.config atb_var_som.config
+		CROSS_COMPILE=aarch64-none-elf- make O=$buildig_directory menuconfig
+		cp $buildig_directory/.config $buildig_directory.config
 	
 	elif [[ $1 == "config" ]]
 	then
-		cp atb_var_som.config atb-var-som_build/.config
+		cp "${board}.config" $buildig_directory/.config
 	
 	else
 		echo "Unknown mode"
@@ -53,11 +57,10 @@ make_uboot() {
 		return -2
 	fi
 		
-	cp "$buildig_directory/u-boot-nodtb.bin"                 $binaries_dest_dir
-	cp "$buildig_directory/spl/u-boot-spl.bin"               $binaries_dest_dir
-	cp "$buildig_directory/arch/arm/dts/atb-var-som.dtb"     $binaries_dest_dir
-	#cp "$buildig_directory/arch/arm/dts/imx8mq-evk.dtb"	    "$binaries_dest_dir/atb-smarc.dtb"
-	cp "$buildig_directory/tools/mkimage"                    "$binaries_dest_dir/mkimage_uboot"
+	cp "$buildig_directory/u-boot-nodtb.bin"                $binaries_dest_dir
+	cp "$buildig_directory/spl/u-boot-spl.bin"              $binaries_dest_dir
+	cp "$buildig_directory/arch/arm/dts/${board}.dtb"     	$binaries_dest_dir
+	cp "$buildig_directory/tools/mkimage"                  	$binaries_dest_dir/mkimage_uboot
 	cd ..
 	
 	return 0
@@ -73,8 +76,8 @@ make_atf() {
 	
 	local binaries_dest_dir=$1
 	local target_binary="bl31"
-	local target_soc="imx8mp"
-	#local target_soc="imx8mq"
+	#local target_soc="imx8mp"
+	local target_soc="imx8mq"
 	local debug_enable=0
 	
 	cd imx-atf/
@@ -148,12 +151,12 @@ make_image() {
 	cd imx-mkimage
 
 	make clean
-	make SOC=iMX8MP BOARD=atb-var-som OUTIMG=usd_flash.bin flash_img
-	#make SOC=iMX8MQ BOARD=atb-smarc OUTIMG=usd_flash.bin flash_img
+	#make SOC=iMX8MP BOARD=atb-var-som OUTIMG=usd_flash.bin flash_img
+	make SOC=iMX8MQ BOARD=atb-im8m-smarc OUTIMG=usd_flash.bin flash_img
 	sha256sum ./iMX8M/usd_flash.bin
 	
-	sudo dd if=./iMX8M/usd_flash.bin of=/dev/sdc bs=1k seek=32 conv=fsync
-	#sudo dd if=./iMX8M/usd_flash.bin of=/dev/sdc bs=1k seek=33 conv=fsync
+	#sudo dd if=./iMX8M/usd_flash.bin of=/dev/sdc bs=1k seek=32 conv=fsync
+	sudo dd if=./iMX8M/usd_flash.bin of=/dev/sdc bs=1k seek=33 conv=fsync
 	
 	cd ..
 	
@@ -260,7 +263,7 @@ then
 else
 	echo SUCCESS
 fi
-
+exit
 #5
 prepare_os_images_strorage
 ret_val=$?
