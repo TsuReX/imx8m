@@ -19,7 +19,7 @@ make_uboot() {
 	then
 		return -1
 	fi
-	
+
 	cd imx-uboot/
 	
 	local binaries_dest_dir=$2
@@ -29,12 +29,17 @@ make_uboot() {
 			local board="atb_var_som"
 			local dtb="atb-var-som.dtb"
 		;;
-		
+
+		"atb-imx8mp-som")
+			local board="atb_imx8mp_som"
+			local dtb="atb-imx8mp-som.dtb"
+		;;
+
 		"atb-imx8m-smarc")
 			local board="atb_imx8m_smarc"
 			local dtb="atb-imx8m-smarc.dtb"
 		;;
-		
+
 		*)
 			return -2
 		;;
@@ -97,7 +102,7 @@ make_atf() {
 	fi
 	
 	case $2 in
-		"atb-var-som")
+		"atb-var-som" |	"atb-imx8mp-som")
 			local target_soc="imx8mp"
 		;;
 		
@@ -202,7 +207,7 @@ make_image() {
 
 	local board=$1
 	case $1 in
-		"atb-var-som")
+		"atb-var-som" | "atb-imx8mp-som")
 			local soc="iMX8MP"
 			local seek=32
 		;;
@@ -287,7 +292,7 @@ prepare_rootfs() {
 # The script entry point is here.
 # The script's arguments are:
 # $1 - configuration type {defconfig | menuconfig | config}
-# $2 - board {atb-var-som | atb-imx8m-smarc}
+# $2 - board {atb-var-som | atb-imx8mp-som | atb-imx8m-smarc}
 
 if ! [[ $# -eq 2 ]]
 then
@@ -352,7 +357,7 @@ fi
 exit
 
 #5
-prepare_os_images_strorage
+prepare_os_images_storage
 ret_val=$?
 if ! [[ $ret_val -eq 0 ]]
 then
