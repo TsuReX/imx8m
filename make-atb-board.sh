@@ -6,6 +6,11 @@ img_dest=$(pwd)"/imx-mkimage/iMX8M"
 img_utils=$(pwd)"/imx-mkimage"
 aux_binaries=$(pwd)"/firmware-imx-8.9/firmware"
 usd_device="/dev/sdc"
+firmware="firmware-imx-8.9"
+linux_dtb="/home/user/drive/workspace/buildroot/output/images/imx8mp-evk.dtb"
+linux="/home/user/drive/workspace/buildroot/output/images/Image"
+rootfs_img="/home/user/drive/workspace/buildroot/output/images/rootfs.cpio.gz"
+rootfs="/home/user/drive/workspace/buildroot/output/target"
 
 # 
 # Function configures (if it's needed) and makes uboot binaries
@@ -165,11 +170,35 @@ make_aux_binaries() {
 	then
 		return -1
 	fi
-
+	
+	if ! [ -f ${1}/ddr/synopsys/lpddr4_pmu_train_1d_dmem.bin ]
+	then
+		return -2
+	fi
 	cp ${1}/ddr/synopsys/lpddr4_pmu_train_1d_dmem.bin 	$2
+	
+	if ! [ -f ${1}/ddr/synopsys/lpddr4_pmu_train_1d_imem.bin ]
+	then
+		return -3
+	fi
 	cp ${1}/ddr/synopsys/lpddr4_pmu_train_1d_imem.bin 	$2
+	
+	if ! [ -f ${1}/ddr/synopsys/lpddr4_pmu_train_2d_dmem.bin ]
+	then
+		return -4
+	fi
 	cp ${1}/ddr/synopsys/lpddr4_pmu_train_2d_dmem.bin 	$2
+	
+	if ! [ -f ${1}/ddr/synopsys/lpddr4_pmu_train_2d_imem.bin ]
+	then
+		return -5
+	fi
 	cp ${1}/ddr/synopsys/lpddr4_pmu_train_2d_imem.bin 	$2
+	
+	if ! [ -f ${1}/hdmi/cadence/signed_hdmi_imx8m.bin ]
+	then
+		return -6
+	fi
 	cp ${1}/hdmi/cadence/signed_hdmi_imx8m.bin 			$2
 
 	return 0
@@ -179,7 +208,7 @@ make_aux_binaries() {
 # Function formates specified block device
 # and creates partiotions with file systems where OS's files will be copied to.
 #
-# TODO: Implement error generation.
+# TODO: Check that device is removable
 prepare_storage() {
 	# $1 - path to a block device that will be formated and prepared for file systems
 
@@ -192,23 +221,61 @@ prepare_storage() {
 
 	local device=$1
 
+	echo "-------->>" $(cat "/sys/block/${device##*/}/removable")
+	echo "-------->>" $(cat "/sys/block/${device##*/}/device/model")
+	
+	if ! [ $(cat "/sys/block/${device##*/}/removable") -eq 1 ] || ! [ $(cat "/sys/block/${device##*/}/device/model") = "Mass-Storage" ]
+	then
+		return -2
+	fi
+	
 	echo "Fill the device ${1} with zeroes"
 	sudo dd if=/dev/zero of=$device bs=1M count=8
+	if ! [[ $? -eq 0 ]]
+	then
+		return -3
+	fi
+	
 	sleep 1
 	echo "Create MSDOS partition table on the device ${1}"
 	sudo parted $device mklabel msdos -s
+	if ! [[ $? -eq 0 ]]
+	then
+		return -4
+	fi
+	
 	sleep 1
 	echo "Create first partition"
 	sudo parted $device mkpart primary 8M 520M -s
+	if ! [[ $? -eq 0 ]]
+	then
+		return -5
+	fi
+	
 	sleep 1
 	echo "Create second partition"
 	sudo parted $device mkpart primary 528M 1G -s
+	if ! [[ $? -eq 0 ]]
+	then
+		return -6
+	fi
+	
 	sleep 1
 	echo "Create fat32 file system on the patition ${device}1"
 	sudo mkfs.fat -F32 $device"1"
+	if ! [[ $? -eq 0 ]]
+	then
+		return -7
+	fi
+	
 	sleep 1
 	echo "Create ext4 file system on the patition ${device}2"
 	echo y | sudo mkfs.ext4 $device"2"
+	if ! [[ $? -eq 0 ]]
+	then
+		return -8
+	fi
+	
 	sleep 1
 	sudo parted $device print
 
@@ -218,20 +285,22 @@ prepare_storage() {
 #
 # Functions places prepared bootloader binary to specified block device. 
 #
-# TODO: Implement error generation.
 make_image() {
 	# $1 - board final image buildig utilities directory
 	# $2 - board {atb-var-som | atb-imx8m-smarc}
-
+	# $3 - path to a block device
+	
 	echo "---> Preparing image"	
 
-	if ! [[ $# -eq 2 ]]
+	if ! [[ $# -eq 3 ]]
 	then
 		return -1
 	fi
 
 	local board=$2
-	case $2 in
+	local device=$3
+	
+	case ${board} in
 		"atb-var-som" | "atb-imx8mp-som-symphony" | "atb-imx8mp-som-voskhod1")
 			local soc="iMX8MP"
 			local seek=32
@@ -252,10 +321,19 @@ make_image() {
 	make clean
 
 	make SOC=${soc} BOARD=${board} OUTIMG=usd_flash.bin flash_img
-	sudo dd if=./iMX8M/usd_flash.bin of=/dev/sdc bs=1k seek=${seek} conv=fsync
-
+	if ! [[ $? -eq 0 ]]
+	then
+		return -3
+	fi
+	
+	sudo dd if=./iMX8M/usd_flash.bin of=${device} bs=1k seek=${seek} conv=fsync
+	if ! [[ $? -eq 0 ]]
+	then
+		return -4
+	fi
+	
 	sha256sum ./iMX8M/usd_flash.bin
-
+	sleep 2
 	cd ..
 
 	return 0
@@ -264,32 +342,75 @@ make_image() {
 #
 # Function copies to target storage device binaries needed for OS booting: linux kernel, dtb, root file system image.
 #
-# TODO: Make paremeters to be obtained from arguments
-# TODO: Implement error generation.
 prepare_os_images_storage() {
+	# $1 - path to a block device with file system where linux, drb and rootfs images are stored
+	# $2 - path to linux kernel image
+	# $3 - path to device tree blob
+	# $4 - path to rootfs image
+	
 	echo "---> Preparing kernel, dtb and rootfs files on the bootable storage"
+	
+	if ! [[ $# -eq 4 ]]
+	then
+		return -1
+	fi
+	
+	local device=${1}
+	echo "----------->" ${device}
+	if ! [ -b ${device} ]
+	then
+		return -2
+	fi
+	
 	sleep 5
-	sudo rm -rf ./target_flash_p1
+	
+	rm -rf ./target_flash_p1
 	mkdir ./target_flash_p1
-	sudo mount /dev/sdc1 ./target_flash_p1
+	sudo mount ${device} ./target_flash_p1
+	if ! [[ $? -eq 0 ]]
+	then
+		return -3
+	fi
 	sudo rm -rf ./target_flash_p1/*
 
-	linux_dtb="/home/user/building_drive/buildroot/output/images/atb-imx8mp-som-symphony.dtb"
-	#linux_dtb="/home/user/building_drive/buildroot/output/build/linux-custom/arch/arm64/boot/dts/freescale/imx8mp-var-som-symphony.dtb"
-	linux="/home/user/building_drive/buildroot/output/images/Image"
-	rootfs="/home/user/building_drive/buildroot/output/images/rootfs.cpio.gz"
+	local linux_dtb=$2
+	local linux=$3
+	local rootfs=$4
 
 	echo "Copy dtb"
-#	find ./rootfs | cpio -H newc -o | gzip -9 > _rootfs.cpio.gz ; ./imx-mkimage/iMX8M/mkimage_uboot -A arm -T ramdisk -C gzip -d _rootfs.cpio.gz rootfs.cpio.gz; rm _rootfs.cpio.gz
+	if ! [ -f ${linux_dtb} ]
+	then
+		sudo umount ./target_flash_p1
+		return -4
+	fi
+	
+	ls -l ./target_flash_p1
 	sudo cp $linux_dtb ./target_flash_p1/dtb
 	sha256sum $linux_dtb ./target_flash_p1/dtb
 
 	echo "Copy linux"
+	if ! [ -f ${linux} ]
+	then
+		sudo umount ./target_flash_p1
+		return -5
+	fi
+	
 	sudo cp $linux ./target_flash_p1/linux
 	sha256sum $linux ./target_flash_p1/linux
 
 	echo "Copy rootfs"
+	if ! [ -f ${rootfs} ]
+	then
+		sudo umount ./target_flash_p1
+		return -6
+	fi
+	
 	sudo ./imx-mkimage/iMX8M/mkimage_uboot -A arm -T ramdisk -C gzip -d $rootfs ./target_flash_p1/rootfs
+	if ! [[ $? -eq 0 ]]
+	then
+		sudo umount ./target_flash_p1
+		return -7
+	fi
 #	sudo cp $rootfs ./target_flash_p1/rootfs
 	sha256sum $rootfs ./target_flash_p1/rootfs
 
@@ -298,7 +419,6 @@ prepare_os_images_storage() {
 	ls -l ./target_flash_p1
 	sudo umount ./target_flash_p1
 	sudo rm -rf ./target_flash_p1
-	sudo rm -rf rootfs.cpio.gz
 
 	return 0
 }
@@ -306,23 +426,44 @@ prepare_os_images_storage() {
 #
 # Function copies to target storage device 
 #
-# TODO: Make paremeters to be obtained from arguments
 prepare_rootfs() {
+	# $1 - path to a block device with file system where linux, drb and rootfs images are stored
+	# $2 - path to directory which contains root file system directory tree
+	
 	echo "---> Preparing root fs on the bootable storage"
-
+	
+	if ! [[ $# -eq 2 ]]
+	then
+		echo FAILED
+		exit -1
+	fi
+	
+	local device=$1
+	if ! [ -b ${device} ]
+	then
+		return -2
+	fi
+		
+	local rootfs=$2
+	if ! [ -d ${rootfs} ]
+	then
+		return -3
+	fi
+		
 	sudo rm -rf ./target_flash_p2
 	mkdir ./target_flash_p2
-	sudo mount /dev/sdc2 ./target_flash_p2
+	sudo mount ${device} ./target_flash_p2
 	sudo rm -rf ./target_flash_p2/*
-	sudo cp -r /home/user/building_drive/buildroot/output/target/* ./target_flash_p2
+	sudo cp -r ${rootfs}/* ./target_flash_p2
 	sleep 1
+	ls -l ./target_flash_p2
 	sudo umount ./target_flash_p2
 	sudo rm -rf ./target_flash_p2
 
 	return 0
 }
 
-# The script entry point is here.
+# The script's entry point is here.
 # The script's arguments are:
 # $1 - configuration type {defconfig | menuconfig | config}
 # $2 - board {atb-var-som | atb-imx8mp-som | atb-imx8m-smarc}
@@ -338,7 +479,6 @@ board=$2
 
 # 0
 # TODO: Wrapp the code into function
-firmware=firmware-imx-8.9
 if ! [[ -d ./${firmware} ]]
 then
 	wget "http://sources.buildroot.net/firmware-imx/${firmware}.bin"
@@ -347,13 +487,13 @@ then
 	rm -f "${firmware}.bin"
 #	rm -rf "${firmware}"
 fi
-exit
+
 # 1
 make_uboot ${uboot_src} ${config_type} ${img_dest} ${board}
 ret_val=$?
 if ! [[ $ret_val -eq 0 ]]
 then
-	echo FAILED: $ret_val
+	echo "FAILED: -$((256 - $ret_val))"
 	exit -11
 else
 	echo SUCCESS
@@ -364,7 +504,7 @@ make_atf ${atf_src} ${img_dest} ${board}
 ret_val=$?
 if ! [[ $ret_val -eq 0 ]]
 then
-	echo FAILED
+	echo "FAILED: -$((256 - $ret_val))"
 	exit -12
 else
 	echo SUCCESS
@@ -375,7 +515,7 @@ make_aux_binaries ${aux_binaries} ${img_dest}
 ret_val=$?
 if ! [[ $ret_val -eq 0 ]]
 then
-	echo FAILED
+	echo "FAILED: -$((256 - $ret_val))"
 	exit -14
 else
 	echo SUCCESS
@@ -386,43 +526,41 @@ prepare_storage ${usd_device}
 ret_val=$?
 if ! [[ $ret_val -eq 0 ]]
 then
-	echo FAILED
+	echo "FAILED: -$((256 - $ret_val))"
 	exit -15
 else
 	echo SUCCESS
 fi
 
 # 4
-make_image ${img_utils} ${board}
+make_image ${img_utils} ${board} ${usd_device}
 ret_val=$?
 if ! [[ $ret_val -eq 0 ]]
 then
-	echo FAILED
+	echo "FAILED: -$((256 - $ret_val))"
 	exit -16
 else
 	echo SUCCESS
 fi
-
-#echo "---> WARNING! The script is intentionally shorted. Bootloader is prepared and placed only."
-#exit
 
 #5
-prepare_os_images_storage
+prepare_os_images_storage "${usd_device}1" ${linux_dtb} ${linux} ${rootfs_img} 
 ret_val=$?
 if ! [[ $ret_val -eq 0 ]]
 then
-	echo FAILED
+	echo "FAILED: -$((256 - $ret_val))"
 	exit -16
 else
 	echo SUCCESS
 fi
 
+#echo "---> WARNING! The script is intentionally shorted."; exit
 #6
-prepare_rootfs
+prepare_rootfs "${usd_device}2" ${rootfs}
 ret_val=$?
 if ! [[ $ret_val -eq 0 ]]
 then
-	echo FAILED
+	echo "FAILED: -$((256 - $ret_val))"
 	exit -17
 else
 	echo SUCCESS
